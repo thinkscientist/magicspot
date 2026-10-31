@@ -534,14 +534,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .app.driving .toast { bottom: auto; top: calc(var(--safe-top) + var(--sp-3)); }
 
 .drive-top { display: flex; align-items: center; gap: var(--sp-3); }
-.drive-exit, .drive-nav {
+.drive-exit {
   flex: none; height: 52px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--text);
   display: grid; place-items: center; font-weight: 700; font-size: var(--fs-sm);
 }
 .drive-exit { width: 52px; }
 .drive-exit svg { width: 24px; height: 24px; stroke-width: 2.4; }
-.drive-nav { padding: 0 14px; line-height: 1.15; text-align: center; }
-.drive-nav small { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); }
 .drive-title { flex: 1; min-width: 0; }
 .drive-title small { display: block; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
 .drive-title b { display: block; font: 700 22px/1.15 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -568,6 +566,15 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 17px;
 }
 .dcard.is-target .dc-go { font-size: 13px; line-height: 1.1; text-align: center; padding: 0 4px; }
+/* Which app turn-by-turn opens in: a two-way switch under the cards. */
+.nav-pick { display: flex; align-items: center; gap: var(--sp-3); }
+.nav-pick-label { flex: none; font-size: 15px; color: var(--text-muted); }
+.nav-pick .seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; background: var(--surface-2); border-radius: var(--r-md); padding: 3px; gap: 3px; }
+.nav-pick .seg button {
+  height: 44px; border: 0; border-radius: 9px; background: transparent; color: var(--text-muted);
+  font-weight: 700; font-size: 15px; transition: background-color var(--dur-fast), color var(--dur-fast);
+}
+.nav-pick .seg button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .15); }
 .drive-note { margin: 0; font-size: 15px; color: var(--text-muted); text-align: center; }
 .drive-note .link { font-size: 15px; }
 .drive-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }

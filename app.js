@@ -725,7 +725,6 @@
     $("#drive-title").innerHTML = state.dest
       ? `<small>Parking near</small><b>${esc(state.dest.name)}</b>`
       : `<small>Parking near</small><b>${inCity() ? "you" : "Downtown Miami"}</b>`;
-    $("#drive-nav").innerHTML = `${state.navApp === "apple" ? "Apple Maps" : "Google Maps"}<small>navigates</small>`;
     const target = state.driveTarget && byId[state.driveTarget];
     const body = $("#drive-body");
 
@@ -767,6 +766,11 @@
           <span class="dc-text"><span class="dc-name">${esc(s.name)}</span>${priceSpan(s, "dc-price")}<span class="dc-meta">${bits.join(" · ")}</span></span>
           <span class="dc-go">${isT ? "Navigating" : "Go"}</span></a></li>`;
       }).join("")}</ol>
+      <div class="nav-pick" role="radiogroup" aria-label="Navigate with">
+        <span class="nav-pick-label">Navigate with</span>
+        <span class="seg">${[["google", "Google Maps"], ["apple", "Apple Maps"]].map(([k, l]) =>
+          `<button type="button" role="radio" data-nav="${k}" aria-checked="${state.navApp === k}">${l}</button>`).join("")}</span>
+      </div>
       <p class="drive-note">${!state.me
         ? 'Turn on location so the map can follow you.'
         : moving()
@@ -860,6 +864,7 @@
     const t = e.target.closest("button, a");
     if (!t) return;
     if (t.dataset.sug != null) { e.preventDefault(); pickSuggestion(+t.dataset.sug); return; }
+    if (t.dataset.nav) { state.navApp = t.dataset.nav; saveUi(); renderAll(); return; }
     if (t.dataset.driveGo) {
       // The link opens navigation; remember where you're heading so the app can greet you there.
       state.driveTarget = t.dataset.driveGo; state.arrived = false;
@@ -884,8 +889,6 @@
       case "q-clear": case "dest-clear": clearDest(); return;
       case "btn-drive": enterDrive(); return;
       case "drive-exit": case "drive-done": exitDrive(); return;
-      case "drive-nav": state.navApp = state.navApp === "apple" ? "google" : "apple"; saveUi(); renderAll();
-        toast(`Navigation opens in ${state.navApp === "apple" ? "Apple Maps" : "Google Maps"}.`); return;
       case "drive-parked": state.arrived = true; renderAll(); driveFrame(false); return;
       case "drive-change":
         if (moving()) return;
