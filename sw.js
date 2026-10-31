@@ -3,7 +3,7 @@
 // Map: tiles, fonts and icons are cached as you browse, so areas you've already looked at
 // still draw offline. The style file is refreshed in the background.
 // Place search (Photon) is never cached: it has to be live.
-const APP = "ms-app-v2";
+const APP = "ms-app-v3";
 const TILES = "ms-tiles-v1";
 const TILE_LIMIT = 1500;
 const SHELL = [

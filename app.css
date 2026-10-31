@@ -503,8 +503,21 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 /* For a phone in a car dock: glanceable, huge targets, nothing to type. The drawer and tabs
    go away; the map follows you; the best three car parks sit in big cards. Tapping one hands
    turn-by-turn navigation to a real maps app. */
-.drive-btn { width: auto !important; padding: 0 12px 0 10px; gap: 6px; display: flex !important; align-items: center; font-weight: 700; font-size: var(--fs-sm); color: var(--accent) !important; }
-.drive-btn svg { width: 20px; height: 20px; }
+/* The Drive switch: a flamingo pill in the map's bottom-left corner, riding just above the
+   list as it moves. It steps aside while a pin's preview card uses that corner. */
+.drive-fab {
+  position: absolute; z-index: 550;
+  left: calc(var(--sp-3) + env(safe-area-inset-left, 0px));
+  bottom: calc(var(--map-bottom, 0px) + var(--sp-3));
+  height: 44px; padding: 0 16px 0 13px; border: 0; border-radius: var(--r-pill);
+  background: var(--accent); color: var(--on-accent); box-shadow: var(--shadow);
+  display: flex; align-items: center; gap: 7px; font-weight: 700; font-size: var(--fs-md);
+  transition: bottom var(--dur-drawer) var(--ease-out), transform var(--dur-fast), opacity var(--dur-fast);
+}
+.drive-fab svg { width: 22px; height: 22px; stroke-width: 2.2; }
+.drive-fab:active { transform: scale(.95); }
+.stage.dragging .drive-fab { transition: none; }
+.peek:not([hidden]) ~ .drive-fab { opacity: 0; pointer-events: none; transform: translateY(8px); }
 .drive {
   position: absolute; z-index: 700; left: 0; right: 0; bottom: 0;
   background: var(--bg); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .18);
@@ -512,7 +525,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   display: flex; flex-direction: column; gap: var(--sp-3);
   animation: rise var(--dur-base) var(--ease-out);
 }
-.app.driving .drawer, .app.driving .tabs, .app.driving .peek, .app.driving #btn-drive { display: none !important; }
+.app.driving .drawer, .app.driving .tabs, .app.driving .peek, .app.driving .drive-fab { display: none !important; }
 .app.driving .pin:not(.is-cand) { display: none; }
 .app.driving .pin.is-cand .pin-b { transform: scale(1.25); }
 .app.driving .pin.is-target .pin-b { transform: scale(1.5); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px rgb(0 0 0 / .35); }
