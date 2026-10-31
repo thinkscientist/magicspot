@@ -104,12 +104,11 @@
     me: null,
     collapsed: false,
     driving: false,                     // Drive mode: phone in a car dock
-    navApp: saved.navApp === "apple" ? "apple" : "google", // which app turn-by-turn hands off to
     driveTarget: null,                  // the car park you tapped Go on
     arrived: false,
     speed: 0,                           // metres a second, from location fixes
   };
-  const saveUi = () => store.set("ui", { tab: state.tab, kinds: [...state.kinds], dest: state.dest, navApp: state.navApp });
+  const saveUi = () => store.set("ui", { tab: state.tab, kinds: [...state.kinds], dest: state.dest });
   const inCity = () => state.me && meters(state.me, CITY.center) < 60000;
   // Distances are measured from where you're going, else from you, else from Downtown.
   const origin = () => state.dest || (inCity() ? state.me : CITY.center);
@@ -655,7 +654,6 @@
       // Speed: from the fix if the phone gives it, otherwise from the last two fixes.
       const sp = pos.coords.speed;
       state.speed = sp != null && sp >= 0 ? sp : prev && state.me.t > prev.t ? meters(prev, state.me) / ((state.me.t - prev.t) / 1000) : 0;
-      state.speedAt = Date.now();
       onDriveFix();
       if (!meMarker) meMarker = addMarker(new maplibregl.Marker({ element: html('<div class="me-dot"></div>') }).setLngLat([state.me.lng, state.me.lat]), "You are here");
       else meMarker.setLngLat([state.me.lng, state.me.lat]);
@@ -691,18 +689,11 @@
   // For a phone in a car dock: the best three car parks for where you're going, in big
   // cards. Tapping one hands turn-by-turn navigation to Google Maps or Apple Maps. Nothing
   // to type while moving; the screen stays awake; arriving shows what you need at the gate.
-  const MOVING = 3;      // m/s (~7 mph): changing the destination is off above this
   const DRIVING = 6;     // m/s (~13 mph): offer Drive mode above this
   const ARRIVED = 200;   // metres from the car park
   let driveIds = new Set(), wakeLock = null, offeredDrive = false, fastFixes = 0, lastFollow = null;
-  // A parked phone can stop getting location updates, so a speed reading expires after 10 seconds.
-  const moving = () => state.speed > MOVING && Date.now() - (state.speedAt || 0) < 10000;
-  const navUrl = (s) => {
-    const where = s.approx ? `${s.lat},${s.lng}` : s.q;
-    return state.navApp === "apple"
-      ? `https://maps.apple.com/?daddr=${encodeURIComponent(where)}&dirflg=d`
-      : `https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=${encodeURIComponent(where)}`;
-  };
+  // Turn-by-turn always opens in Google Maps.
+  const navUrl = (s) => `https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=${encodeURIComponent(s.approx ? `${s.lat},${s.lng}` : s.q)}`;
   // Best three: car parks anyone can use (not park & ride: you're driving to the place),
   // nearest to where you're going, with anything closed right now pushed down.
   function driveCandidates(now) {
@@ -766,16 +757,7 @@
           <span class="dc-text"><span class="dc-name">${esc(s.name)}</span>${priceSpan(s, "dc-price")}<span class="dc-meta">${bits.join(" · ")}</span></span>
           <span class="dc-go">${isT ? "Navigating" : "Go"}</span></a></li>`;
       }).join("")}</ol>
-      <div class="nav-pick" role="radiogroup" aria-label="Navigate with">
-        <span class="nav-pick-label">Navigate with</span>
-        <span class="seg">${[["google", "Google Maps"], ["apple", "Apple Maps"]].map(([k, l]) =>
-          `<button type="button" role="radio" data-nav="${k}" aria-checked="${state.navApp === k}">${l}</button>`).join("")}</span>
-      </div>
-      <p class="drive-note">${!state.me
-        ? 'Turn on location so the map can follow you.'
-        : moving()
-          ? "Destination changes are off while you're moving."
-          : `<button type="button" class="link" id="drive-change">${state.dest ? "Change destination" : "Set a destination"}</button>${state.driveTarget ? ' · <button type="button" class="link" id="drive-parked">I\'ve parked</button>' : ""}`}</p>`;
+      ${state.me ? "" : '<p class="drive-note">Turn on location so the map can follow you.</p>'}`;
   }
   const s_only = (s) => s.only || "";
 
@@ -802,7 +784,7 @@
   let driveTick = null;
   function enterDrive() {
     state.driving = true; state.sel = null; state.arrived = false;
-    clearInterval(driveTick); driveTick = setInterval(() => renderDrive(cityNow()), 5000); // e.g. unlock once stopped
+    clearInterval(driveTick); driveTick = setInterval(() => renderDrive(cityNow()), 30000); // open/closed status
     if (sheetId) closeSheet();
     $("#app").classList.add("driving"); $("#drive").hidden = false;
     if (watchId == null) startWatch(false);
@@ -864,7 +846,6 @@
     const t = e.target.closest("button, a");
     if (!t) return;
     if (t.dataset.sug != null) { e.preventDefault(); pickSuggestion(+t.dataset.sug); return; }
-    if (t.dataset.nav) { state.navApp = t.dataset.nav; saveUi(); renderAll(); return; }
     if (t.dataset.driveGo) {
       // The link opens navigation; remember where you're heading so the app can greet you there.
       state.driveTarget = t.dataset.driveGo; state.arrived = false;
@@ -889,10 +870,6 @@
       case "q-clear": case "dest-clear": clearDest(); return;
       case "btn-drive": enterDrive(); return;
       case "drive-exit": case "drive-done": exitDrive(); return;
-      case "drive-parked": state.arrived = true; renderAll(); driveFrame(false); return;
-      case "drive-change":
-        if (moving()) return;
-        exitDrive(); state.tab = "find"; setCollapsed(false); renderAll(); qEl.focus(); return;
       case "sheet-close": closeSheet(); return;
       default: return;
     }
