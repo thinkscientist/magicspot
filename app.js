@@ -103,8 +103,13 @@
     sel: null,
     me: null,
     collapsed: false,
+    driving: false,                     // Drive mode: phone in a car dock
+    navApp: saved.navApp === "apple" ? "apple" : "google", // which app turn-by-turn hands off to
+    driveTarget: null,                  // the car park you tapped Go on
+    arrived: false,
+    speed: 0,                           // metres a second, from location fixes
   };
-  const saveUi = () => store.set("ui", { tab: state.tab, kinds: [...state.kinds], dest: state.dest });
+  const saveUi = () => store.set("ui", { tab: state.tab, kinds: [...state.kinds], dest: state.dest, navApp: state.navApp });
   const inCity = () => state.me && meters(state.me, CITY.center) < 60000;
   // Distances are measured from where you're going, else from you, else from Downtown.
   const origin = () => state.dest || (inCity() ? state.me : CITY.center);
@@ -498,7 +503,7 @@
   function renderMarkers(now) {
     for (const s of SPOTS) {
       const mk = markers[s.id];
-      const show = matches(s) || state.sel === s.id;
+      const show = matches(s) || state.sel === s.id || (state.driving && driveIds.has(s.id));
       if (show !== mk.on) {
         mk.on = show; clearTimeout(mk.leave);
         if (show) {
@@ -516,6 +521,8 @@
       if (!show) continue;
       mk.el.classList.toggle("is-closed", status(s, now).cls === "closed");
       mk.el.classList.toggle("is-sel", state.sel === s.id);
+      mk.el.classList.toggle("is-cand", driveIds.has(s.id));
+      mk.el.classList.toggle("is-target", state.driveTarget === s.id);
       mk.el.style.zIndex = state.sel === s.id ? 3 : s.only ? 0 : 1;
     }
   }
@@ -643,7 +650,13 @@
     if (watchId != null) { if (center && state.me) map.flyTo({ center: [state.me.lng, state.me.lat], zoom: Math.max(map.getZoom(), 14), duration: anim(600) }); return; }
     firstFix = true;
     watchId = navigator.geolocation.watchPosition((pos) => {
-      state.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy };
+      const prev = state.me;
+      state.me = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, t: pos.timestamp };
+      // Speed: from the fix if the phone gives it, otherwise from the last two fixes.
+      const sp = pos.coords.speed;
+      state.speed = sp != null && sp >= 0 ? sp : prev && state.me.t > prev.t ? meters(prev, state.me) / ((state.me.t - prev.t) / 1000) : 0;
+      state.speedAt = Date.now();
+      onDriveFix();
       if (!meMarker) meMarker = addMarker(new maplibregl.Marker({ element: html('<div class="me-dot"></div>') }).setLngLat([state.me.lng, state.me.lat]), "You are here");
       else meMarker.setLngLat([state.me.lng, state.me.lat]);
       if (firstFix) {
@@ -662,10 +675,11 @@
 
   // ── Toast ────────────────────────────────────────────────────────────────
   let toastTimer = null;
-  function toast(msg) {
+  function toast(msg, action) {
     const el = $("#toast");
-    el.innerHTML = `<span>${esc(msg)}</span>`;
+    el.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button" id="toast-act">${esc(action.label)}</button>` : ""}`;
     el.classList.remove("is-leaving"); el.hidden = false;
+    if (action) $("#toast-act").onclick = () => { el.hidden = true; action.run(); };
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       el.classList.add("is-leaving");
@@ -673,12 +687,155 @@
     }, 4000);
   }
 
+  // ── Drive mode ───────────────────────────────────────────────────────────
+  // For a phone in a car dock: the best three car parks for where you're going, in big
+  // cards. Tapping one hands turn-by-turn navigation to Google Maps or Apple Maps. Nothing
+  // to type while moving; the screen stays awake; arriving shows what you need at the gate.
+  const MOVING = 3;      // m/s (~7 mph): changing the destination is off above this
+  const DRIVING = 6;     // m/s (~13 mph): offer Drive mode above this
+  const ARRIVED = 200;   // metres from the car park
+  let driveIds = new Set(), wakeLock = null, offeredDrive = false, fastFixes = 0, lastFollow = null;
+  // A parked phone can stop getting location updates, so a speed reading expires after 10 seconds.
+  const moving = () => state.speed > MOVING && Date.now() - (state.speedAt || 0) < 10000;
+  const navUrl = (s) => {
+    const where = s.approx ? `${s.lat},${s.lng}` : s.q;
+    return state.navApp === "apple"
+      ? `https://maps.apple.com/?daddr=${encodeURIComponent(where)}&dirflg=d`
+      : `https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=${encodeURIComponent(where)}`;
+  };
+  // Best three: car parks anyone can use (not park & ride: you're driving to the place),
+  // nearest to where you're going, with anything closed right now pushed down.
+  function driveCandidates(now) {
+    const o = state.dest || (inCity() ? state.me : CITY.center);
+    const pool = SPOTS.filter((s) => !s.only && s.kind !== "ride").map((s) => ({ s, d: meters(o, s), st: status(s, now) }));
+    const rank = (x) => x.d + (x.st.cls === "closed" || x.st.cls === "later" ? 5000 : 0);
+    pool.sort((a, b) => rank(a) - rank(b));
+    const top = pool.slice(0, 3);
+    if (state.driveTarget && !top.some((x) => x.s.id === state.driveTarget)) top[2] = pool.find((x) => x.s.id === state.driveTarget);
+    return top;
+  }
+  const shortDest = () => (state.dest ? (state.dest.name.length > 18 ? "there" : state.dest.name) : "");
+  function priceSpan(s, cls) {
+    if (!s.rate) return `<span class="${cls} unk">Rates not listed</span>`;
+    return `<span class="${cls}${/free/i.test(s.rate) ? " free" : ""}">${esc(s.rate)}</span>`;
+  }
+  function renderDrive(now) {
+    const cands = driveCandidates(now);
+    driveIds = new Set(cands.map((x) => x.s.id));
+    $("#drive-title").innerHTML = state.dest
+      ? `<small>Parking near</small><b>${esc(state.dest.name)}</b>`
+      : `<small>Parking near</small><b>${inCity() ? "you" : "Downtown Miami"}</b>`;
+    $("#drive-nav").innerHTML = `${state.navApp === "apple" ? "Apple Maps" : "Google Maps"}<small>navigates</small>`;
+    const target = state.driveTarget && byId[state.driveTarget];
+    const body = $("#drive-body");
+
+    if (target && state.arrived) {
+      const facts = [];
+      if (s_only(target)) facts.push(s_only(target));
+      if (target.rule) facts.push(target.rule);
+      if (target.free) facts.push(`Free: ${target.free}`);
+      for (const n of target.notes || []) if (/clearance|spaces|entrance/i.test(n)) facts.push(n);
+      const h = hoursText(target, now.wd);
+      if (h.cls !== "unk") facts.push(`Today: ${h.text}`);
+      if (target.warn) facts.push(target.warn);
+      body.innerHTML = `
+        <div class="arrive"><div class="drive-title"><small>You're at</small></div>
+          <h2>${esc(target.name)}</h2>
+          ${target.rate ? `<p class="lead${/free/i.test(target.rate) ? " free" : ""}">${esc(target.rate)}</p>` : ""}
+          ${facts.length ? `<ul class="facts">${facts.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}
+        </div>
+        <div class="drive-actions">
+          ${state.dest
+            ? `<a class="btn primary" href="${gmapsWalkTo(target, state.dest)}" target="_blank" rel="noopener">${walkSvg}Walk to ${esc(shortDest())}</a>`
+            : `<a class="btn primary" href="${gmaps(target)}" target="_blank" rel="noopener">${mapSvg}Google Maps</a>`}
+          <button type="button" class="btn" id="drive-done">Done</button>
+        </div>`;
+      return;
+    }
+
+    const o = inCity() ? state.me : null;
+    body.innerHTML = `
+      <ol class="drive-cards">${cands.map(({ s, st }) => {
+        const bits = [];
+        if (o) bits.push(`${miles(meters(o, s)).toFixed(1)} mi away`);
+        if (state.dest) bits.push(`${walkMins(meters(s, state.dest))} min walk to ${esc(shortDest())}`);
+        else if (!o) bits.push(esc(s.area));
+        if (st.text) bits.push(`<span class="st st-${st.cls}">${esc(st.text)}</span>`);
+        const isT = state.driveTarget === s.id;
+        return `<li><a class="dcard k-${s.kind}${isT ? " is-target" : ""}" href="${navUrl(s)}" target="_blank" rel="noopener" data-drive-go="${s.id}"
+            aria-label="Navigate to ${esc(s.name)}, ${esc(s.rate || "rates not listed")}">
+          <span class="dc-text"><span class="dc-name">${esc(s.name)}</span>${priceSpan(s, "dc-price")}<span class="dc-meta">${bits.join(" · ")}</span></span>
+          <span class="dc-go">${isT ? "Navigating" : "Go"}</span></a></li>`;
+      }).join("")}</ol>
+      <p class="drive-note">${!state.me
+        ? 'Turn on location so the map can follow you.'
+        : moving()
+          ? "Destination changes are off while you're moving."
+          : `<button type="button" class="link" id="drive-change">${state.dest ? "Change destination" : "Set a destination"}</button>${state.driveTarget ? ' · <button type="button" class="link" id="drive-parked">I\'ve parked</button>' : ""}`}</p>`;
+  }
+  const s_only = (s) => s.only || "";
+
+  function syncDrivePadding(animate) {
+    const el = $("#drive");
+    const land = window.matchMedia("(orientation: landscape) and (max-height: 560px)").matches;
+    const padding = { top: parseFloat(getComputedStyle($(".mapwrap")).paddingTop) || 0, left: 0,
+      bottom: land ? 0 : el.offsetHeight, right: land ? el.offsetWidth : 0 };
+    if (animate && !reducedMotion) map.easeTo({ padding, duration: 380 }); else map.setPadding(padding);
+  }
+  function driveFrame(instant) {
+    const t = state.driveTarget && byId[state.driveTarget];
+    const pts = [];
+    if (inCity()) pts.push([state.me.lng, state.me.lat]);
+    if (t && !state.arrived) pts.push([t.lng, t.lat]);
+    else if (!inCity() || !t) for (const id of driveIds) pts.push([byId[id].lng, byId[id].lat]);
+    if (state.dest && !t) pts.push([state.dest.lng, state.dest.lat]);
+    if (pts.length) fitTo(pts, instant);
+    lastFollow = state.me;
+  }
+  async function keepAwake() {
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { /* not allowed here; fine */ }
+  }
+  let driveTick = null;
+  function enterDrive() {
+    state.driving = true; state.sel = null; state.arrived = false;
+    clearInterval(driveTick); driveTick = setInterval(() => renderDrive(cityNow()), 5000); // e.g. unlock once stopped
+    if (sheetId) closeSheet();
+    $("#app").classList.add("driving"); $("#drive").hidden = false;
+    if (watchId == null) startWatch(false);
+    keepAwake();
+    renderAll();
+    requestAnimationFrame(() => { syncDrivePadding(false); driveFrame(false); });
+  }
+  function exitDrive() {
+    state.driving = false; state.driveTarget = null; state.arrived = false; driveIds = new Set();
+    clearInterval(driveTick);
+    $("#app").classList.remove("driving"); $("#drive").hidden = true;
+    try { wakeLock?.release(); } catch {} wakeLock = null;
+    setCollapsed(state.collapsed, false);
+    renderAll();
+  }
+  function onDriveFix() {
+    if (!state.driving) {
+      // Moving at driving speed for a few fixes: offer Drive mode, once.
+      fastFixes = state.speed > DRIVING ? fastFixes + 1 : 0;
+      if (fastFixes >= 2 && !offeredDrive) { offeredDrive = true; toast("Looks like you're driving.", { label: "Drive mode", run: enterDrive }); }
+      return;
+    }
+    const t = state.driveTarget && byId[state.driveTarget];
+    if (t && !state.arrived && meters(state.me, t) < ARRIVED) { state.arrived = true; navigator.vibrate?.([20, 60, 20]); driveFrame(false); }
+    renderDrive(cityNow()); renderMarkers(cityNow());
+    if (!lastFollow || meters(lastFollow, state.me) > 40) driveFrame(false);
+  }
+  document.addEventListener("visibilitychange", () => { if (state.driving && !document.hidden) keepAwake(); });
+  window.matchMedia("(orientation: landscape)").addEventListener?.("change", () => { if (state.driving) setTimeout(() => { syncDrivePadding(false); driveFrame(true); }, 200); });
+
   // ── Render ───────────────────────────────────────────────────────────────
   function renderAll() {
     const now = cityNow();
     renderClock(now);
     document.querySelectorAll(".tabs button").forEach((b) => { if (b.dataset.tab === state.tab) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
     document.querySelectorAll(".view").forEach((v) => { v.hidden = v.dataset.view !== state.tab; });
+    if (state.driving) renderDrive(now);
     if (state.tab === "find") renderFind(now); else renderTips();
     renderMarkers(now);
     renderPeek(now);
@@ -703,6 +860,12 @@
     const t = e.target.closest("button, a");
     if (!t) return;
     if (t.dataset.sug != null) { e.preventDefault(); pickSuggestion(+t.dataset.sug); return; }
+    if (t.dataset.driveGo) {
+      // The link opens navigation; remember where you're heading so the app can greet you there.
+      state.driveTarget = t.dataset.driveGo; state.arrived = false;
+      setTimeout(() => { renderAll(); driveFrame(false); }, 0);
+      return;
+    }
     if (t.dataset.open) { openSheet(t.dataset.open); return; }
     if ("about" in t.dataset) { openAbout(); return; }
     if (t.dataset.kind) {
@@ -719,6 +882,14 @@
     switch (t.id) {
       case "btn-locate": case "btn-locprompt": startWatch(true); return;
       case "q-clear": case "dest-clear": clearDest(); return;
+      case "btn-drive": enterDrive(); return;
+      case "drive-exit": case "drive-done": exitDrive(); return;
+      case "drive-nav": state.navApp = state.navApp === "apple" ? "google" : "apple"; saveUi(); renderAll();
+        toast(`Navigation opens in ${state.navApp === "apple" ? "Apple Maps" : "Google Maps"}.`); return;
+      case "drive-parked": state.arrived = true; renderAll(); driveFrame(false); return;
+      case "drive-change":
+        if (moving()) return;
+        exitDrive(); state.tab = "find"; setCollapsed(false); renderAll(); qEl.focus(); return;
       case "sheet-close": closeSheet(); return;
       default: return;
     }

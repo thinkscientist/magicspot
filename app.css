@@ -499,6 +499,85 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 @keyframes toast-out { to { opacity: 0; transform: translate(-50%, 6px); } }
 .toast button { background: none; border: 0; color: var(--accent); font-weight: 700; padding: 6px 8px; font-size: var(--fs-sm); }
 
+/* ── Drive mode ────────────────────────────────────────────────────────── */
+/* For a phone in a car dock: glanceable, huge targets, nothing to type. The drawer and tabs
+   go away; the map follows you; the best three car parks sit in big cards. Tapping one hands
+   turn-by-turn navigation to a real maps app. */
+.drive-btn { width: auto !important; padding: 0 12px 0 10px; gap: 6px; display: flex !important; align-items: center; font-weight: 700; font-size: var(--fs-sm); color: var(--accent) !important; }
+.drive-btn svg { width: 20px; height: 20px; }
+.drive {
+  position: absolute; z-index: 700; left: 0; right: 0; bottom: 0;
+  background: var(--bg); border-radius: var(--r-lg) var(--r-lg) 0 0; box-shadow: 0 -6px 24px rgb(0 0 0 / .18);
+  padding: var(--sp-3) var(--gutter-r) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)) var(--gutter-l);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  animation: rise var(--dur-base) var(--ease-out);
+}
+.app.driving .drawer, .app.driving .tabs, .app.driving .peek, .app.driving #btn-drive { display: none !important; }
+.app.driving .pin:not(.is-cand) { display: none; }
+.app.driving .pin.is-cand .pin-b { transform: scale(1.25); }
+.app.driving .pin.is-target .pin-b { transform: scale(1.5); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px rgb(0 0 0 / .35); }
+.app.driving .me-dot { width: 22px; height: 22px; }
+/* Toasts go to the top in Drive mode, clear of the cards. */
+.app.driving .toast { bottom: auto; top: calc(var(--safe-top) + var(--sp-3)); }
+
+.drive-top { display: flex; align-items: center; gap: var(--sp-3); }
+.drive-exit, .drive-nav {
+  flex: none; height: 52px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  display: grid; place-items: center; font-weight: 700; font-size: var(--fs-sm);
+}
+.drive-exit { width: 52px; }
+.drive-exit svg { width: 24px; height: 24px; stroke-width: 2.4; }
+.drive-nav { padding: 0 14px; line-height: 1.15; text-align: center; }
+.drive-nav small { display: block; font-weight: 400; font-size: 11px; color: var(--text-muted); }
+.drive-title { flex: 1; min-width: 0; }
+.drive-title small { display: block; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.drive-title b { display: block; font: 700 22px/1.15 var(--font-display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.drive-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.dcard {
+  display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: var(--sp-3); align-items: center;
+  min-height: 84px; padding: var(--sp-3) var(--sp-3) var(--sp-3) 0; border-radius: var(--r-md);
+  background: var(--surface); border: 1.5px solid var(--line); color: var(--text); text-decoration: none; overflow: hidden;
+  transition: transform var(--dur-fast), border-color var(--dur-fast);
+}
+.dcard:active { transform: scale(.98); }
+.dcard::before { content: ""; align-self: stretch; margin: calc(-1 * var(--sp-3)) 0; background: var(--k); }
+.dcard.is-target { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }
+.dc-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dc-name { font-size: 20px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-price { font-size: 17px; font-weight: 700; }
+.dc-price.free { color: var(--free); }
+.dc-price.unk { color: var(--text-muted); font-weight: 400; font-size: 15px; }
+.dc-meta { font-size: 15px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-meta .st { font-size: 15px; }
+.dc-go {
+  display: grid; place-items: center; width: 64px; height: 56px; border-radius: var(--r-md);
+  background: var(--accent); color: var(--on-accent); font-weight: 800; font-size: 17px;
+}
+.dcard.is-target .dc-go { font-size: 13px; line-height: 1.1; text-align: center; padding: 0 4px; }
+.drive-note { margin: 0; font-size: 15px; color: var(--text-muted); text-align: center; }
+.drive-note .link { font-size: 15px; }
+.drive-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.drive-actions .btn { height: 60px; font-size: 18px; }
+.drive-actions .btn svg { width: 22px; height: 22px; }
+/* Arrived */
+.arrive h2 { font: 700 26px/1.15 var(--font-display); margin: 0; text-wrap: balance; }
+.arrive .lead { font-size: 22px; font-weight: 700; margin: 6px 0 0; }
+.arrive .lead.free { color: var(--free); }
+.arrive .facts { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 17px; }
+.arrive .facts li { display: flex; gap: 8px; }
+.arrive .facts li::before { content: "•"; color: var(--accent); font-weight: 800; }
+
+/* Landscape dashboard mounts: map on the left, the cards on the right. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .drive {
+    top: 0; left: auto; width: min(460px, 52vw); border-radius: 0; overflow-y: auto;
+    padding-top: calc(var(--sp-3) + env(safe-area-inset-top, 0px)); padding-left: var(--sp-4);
+  }
+  .dcard { min-height: 74px; }
+  .dc-name { font-size: 18px; }
+}
+
 /* Small phones (iPhone SE and similar) */
 @media (max-width: 374px) {
   :root { --walk-col: 56px; --fs-brand: 26px; }

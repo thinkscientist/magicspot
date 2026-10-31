@@ -44,3 +44,12 @@ The map fills the screen and runs under the status bar. The list is a drawer lai
 ## Motion
 
 Same tokens and moments as Pour Decisions: rows rise in after a filter or destination change, pins ripple in from the middle of the map, the drawer and sheet slide, the destination pin drops in. All of it is off under reduced motion.
+
+## Drive mode
+
+For a phone in a car dock: glance and tap, nothing to read closely, nothing to type.
+
+- **Layout:** the drawer, tabs and preview card go away; the map follows your position and shows only the three candidate car parks, your destination and you. The panel holds a big Exit button, "Parking near …", the navigation-app switch, and three cards. Landscape dashboard mounts get the map on the left and the cards in a column on the right.
+- **Cards:** 84px tall, a kind-coloured edge, the name at 20px, the price at 17px, then "0.4 mi away · 6 min walk to …" and open status, with a 64×56 flamingo **Go** button. The whole card is the tap target. Candidates are car parks anyone can use (not park & ride), nearest to the destination, with anything closed right now pushed down.
+- **Go** hands turn-by-turn navigation to Google Maps or Apple Maps; the card then reads "Navigating". Within 200 m of it, the panel switches to **You're at …**: the price, clearance, rules and today's hours in 17–26px type, with **Walk to …** and **Done**.
+- **Safety:** changing the destination is locked above about 7 mph (a speed reading expires after 10 seconds without a fix, so a parked phone unlocks); the screen is kept awake with the Wake Lock API; toasts move to the top; above about 13 mph outside Drive mode, the app offers it once.
